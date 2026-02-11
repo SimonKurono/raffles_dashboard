@@ -13,7 +13,7 @@ from build_raffles_benchmark_csv import fetch_rebased_ticker, load_raffles_serie
 RAFFLES_CSV = Path("raffles.csv")
 MAX_TICKERS = 5
 DEFAULT_TICKER_ARRAY = "TLT,LQD,JNK,EMB,EMLC"
-DEFAULT_NUM_TICKERS = 2
+DEFAULT_DECIMAL_PLACES = 2
 EARLIEST_ALLOWED_START = pd.Timestamp("2016-01-01")
 
 
@@ -52,7 +52,7 @@ def get_raffles_bounds(csv_path: Path) -> tuple[pd.Timestamp, pd.Timestamp]:
     return lower, upper
 
 
-def build_output(start_date: str, end_date: str, tickers: list[str]) -> pd.DataFrame:
+def build_output(start_date: str, end_date: str, tickers: list[str], decimal_places: int) -> pd.DataFrame:
     monthly_index = month_start_range(start_date, end_date)
     out = pd.DataFrame(index=monthly_index)
     out["Raffles"] = load_raffles_series(RAFFLES_CSV, monthly_index)
@@ -60,7 +60,7 @@ def build_output(start_date: str, end_date: str, tickers: list[str]) -> pd.DataF
     for ticker in tickers:
         out[ticker] = fetch_rebased_ticker(ticker, monthly_index)
 
-    out = out.round(2)
+    out = out.round(decimal_places)
     out.insert(0, "YEAR-MONTH", out.index.strftime("%Y-%m-%d"))
     return out
 
@@ -102,12 +102,13 @@ def main() -> None:
             help="Example: TLT,LQD,JNK,EMB,EMLC",
         )
 
-        num_tickers = st.number_input(
-            "How many tickers to include (1-5, from left to right in the array)",
-            min_value=1,
-            max_value=MAX_TICKERS,
-            value=DEFAULT_NUM_TICKERS,
+        decimal_places = st.number_input(
+            "Decimal places",
+            min_value=0,
+            max_value=8,
+            value=DEFAULT_DECIMAL_PLACES,
             step=1,
+            help="Applies to preview and downloaded CSV.",
         )
 
         submitted = st.form_submit_button("Build CSV")
@@ -124,13 +125,11 @@ def main() -> None:
         st.error("Provide at least one ticker in the ticker array.")
         return
 
-    if num_tickers > len(parsed_tickers):
-        st.error(
-            f"You requested {num_tickers} ticker(s), but only {len(parsed_tickers)} unique ticker(s) were provided."
-        )
+    if len(parsed_tickers) > MAX_TICKERS:
+        st.error(f"Provide at most {MAX_TICKERS} unique tickers.")
         return
 
-    chosen = parsed_tickers[:num_tickers]
+    chosen = parsed_tickers
     st.write("Tickers included:", ", ".join(chosen))
 
     try:
@@ -139,6 +138,7 @@ def main() -> None:
                 start_date=pd.Timestamp(start_date).strftime("%Y-%m-%d"),
                 end_date=pd.Timestamp(end_date).strftime("%Y-%m-%d"),
                 tickers=chosen,
+                decimal_places=int(decimal_places),
             )
     except Exception as exc:  # pragma: no cover - UI error path
         st.error(str(exc))
@@ -147,7 +147,8 @@ def main() -> None:
     st.success(f"Built {len(result)} monthly rows.")
     st.dataframe(result, use_container_width=True, height=420)
 
-    csv_bytes = result.to_csv(index=False, float_format="%.2f").encode("utf-8")
+    float_format = f"%.{int(decimal_places)}f"
+    csv_bytes = result.to_csv(index=False, float_format=float_format).encode("utf-8")
     filename = (
         f"raffles_benchmark_{pd.Timestamp(start_date).strftime('%Y%m%d')}"
         f"_{pd.Timestamp(end_date).strftime('%Y%m%d')}.csv"
