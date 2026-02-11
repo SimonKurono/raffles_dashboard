@@ -2,3 +2,4 @@ streamlit>=1.40
 yfinance>=0.2.54
 pandas>=2.2
 numpy>=1.26
+fpdf2>=2.7.9
